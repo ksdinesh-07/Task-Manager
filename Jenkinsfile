@@ -149,8 +149,8 @@ pipeline {
                         sh '''
                             echo "Running Terraform plan..."
                             terraform plan \
-                                -var="environment=${TF_VAR_environment}" \
-                                -var="docker_image=${DOCKER_IMAGE}:${DOCKER_TAG}" \
+                                
+                                
                                 -out=tfplan.${BUILD_NUMBER}
                             
                             # Show plan summary
