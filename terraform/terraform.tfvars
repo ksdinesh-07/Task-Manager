@@ -1,7 +1,7 @@
 aws_region = "us-east-1"
 environment = "dev"
 project_name = "task-manager"
-instance_type = "t2.micro"
+instance_type = "t3.micro"
 ssh_key_name = "task-manager-key"
 
 vpc_id = "vpc-0b92e1eb58c1614fb"

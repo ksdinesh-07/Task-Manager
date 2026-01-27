@@ -20,7 +20,7 @@ variable "ssh_key_name" {
 }
 
 variable "subnet_id" {
-  description = "Subnet ID for the instance"
+  description = "Subnet ID"
   type        = string
 }
 
@@ -29,16 +29,9 @@ variable "security_groups" {
   type        = list(string)
 }
 
-variable "iam_instance_profile" {
+variable "iam_instance_profile_name" {
   description = "IAM instance profile name"
   type        = string
-  default     = ""
-}
-
-variable "root_volume_size" {
-  description = "Root volume size in GB"
-  type        = number
-  default     = 20
 }
 
 variable "user_data" {
@@ -48,7 +41,7 @@ variable "user_data" {
 }
 
 variable "tags" {
-  description = "Additional tags"
+  description = "Resource tags"
   type        = map(string)
   default     = {}
 }
