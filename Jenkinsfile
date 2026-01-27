@@ -36,12 +36,12 @@ pipeline {
                     echo "Tests completed!"
                 '''
             }
-            post {
-                always {
-                    junit 'reports/**/*.xml'  // If using Jest/Mocha test reporters
-                }
-            }
-        }
+        //    post {
+          //      always {
+            //        junit 'reports/**/*.xml'  // If using Jest/Mocha test reporters
+            //    }
+           // }
+       // }
         
         // Stage 3: Security Scan
         stage('Security Scan') {
