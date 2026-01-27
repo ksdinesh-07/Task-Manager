@@ -3,7 +3,7 @@ pipeline {
     
     environment {
         // Use your actual Docker Hub username
-        DOCKER_HUB_USERNAME = 'YOUR_DOCKERHUB_USERNAME'  // CHANGE TO YOUR USERNAME
+        DOCKER_HUB_USERNAME = 'ksdinesh07'  // CHANGE TO YOUR USERNAME
         APP_NAME = 'task-manager'
         DOCKER_IMAGE = "${DOCKER_HUB_USERNAME}/${APP_NAME}"
         DOCKER_TAG = "${BUILD_NUMBER}-${GIT_COMMIT.take(7)}"
