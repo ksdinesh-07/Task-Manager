@@ -54,13 +54,34 @@ pipeline {
             }
         }
         
+        stage('Clean Previous Containers') {
+            steps {
+                sh '''
+                    echo "Cleaning up any previous containers..."
+                    docker stop test-app 2>/dev/null || true
+                    docker rm test-app 2>/dev/null || true
+                    echo "✅ Cleanup completed"
+                '''
+            }
+        }
+        
         stage('Test') {
             steps {
                 sh '''
                     echo "Testing the image..."
-                    docker run -d --name test-app -p 8080:80 ${DOCKER_IMAGE}:latest
+                    # Use random port to avoid conflicts
+                    TEST_PORT=$((8080 + RANDOM % 100))
+                    echo "Using port: $TEST_PORT"
+                    
+                    docker run -d --name test-app -p ${TEST_PORT}:80 ${DOCKER_IMAGE}:latest
                     sleep 5
-                    curl -f http://localhost:8080/health && echo "✅ Application is healthy!" || echo "❌ Health check failed"
+                    
+                    if curl -f http://localhost:${TEST_PORT}/health; then
+                        echo "✅ Application is healthy!"
+                    else
+                        echo "❌ Health check failed"
+                    fi
+                    
                     docker stop test-app
                     docker rm test-app
                 '''
@@ -76,6 +97,13 @@ pipeline {
         }
         failure {
             echo "❌ Pipeline failed!"
+        }
+        always {
+            sh '''
+                echo "Final cleanup..."
+                docker stop test-app 2>/dev/null || true
+                docker rm test-app 2>/dev/null || true
+            '''
         }
     }
 }
