@@ -20,36 +20,28 @@ locals {
   }
 }
 
-# VPC module
-module "vpc" {
-  source = "terraform-aws-modules/vpc/aws"
-  
-  name = local.name_prefix
-  cidr = "10.0.0.0/16"
-  
-  azs             = slice(data.aws_availability_zones.available.names, 0, 2)
-  public_subnets  = ["10.0.1.0/24", "10.0.2.0/24"]
-  private_subnets = ["10.0.101.0/24", "10.0.102.0/24"]
-  
-  enable_nat_gateway   = true
-  single_nat_gateway   = true
-  enable_dns_hostnames = true
-  
-  tags = local.common_tags
+# Use existing VPC (from variables) instead of creating new one
+data "aws_vpc" "selected" {
+  id = var.vpc_id
 }
 
-# Security Group module
+data "aws_subnet" "public_subnets" {
+  count = length(var.public_subnet_ids)
+  id    = var.public_subnet_ids[count.index]
+}
+
+# Security groups using existing VPC
 module "security_groups" {
   source = "./modules/sg"
   
   project_name     = var.project_name
   environment      = var.environment
-  vpc_id           = module.vpc.vpc_id
+  vpc_id           = var.vpc_id  # Use existing VPC
   allowed_ips      = var.allowed_ips
   additional_ports = [80, 443, 3000]
 }
 
-# EC2 Instance module
+# EC2 Instance using existing VPC subnets
 module "ec2_instance" {
   source = "./modules/ec2"
   
@@ -57,7 +49,7 @@ module "ec2_instance" {
   environment     = var.environment
   instance_type   = var.instance_type
   ssh_key_name    = var.ssh_key_name
-  subnet_id       = module.vpc.public_subnets[0]
+  subnet_id       = var.public_subnet_ids[0]  # Use existing subnet
   security_groups = [module.security_groups.web_sg_id]
   user_data       = file("${path.module}/scripts/ec2-user-data.sh")
   
@@ -79,21 +71,4 @@ module "s3" {
   project_name = var.project_name
   environment  = var.environment
   region       = var.aws_region
-}
-
-# Route53 DNS record (if domain provided)
-resource "aws_route53_record" "app" {
-  count = var.domain_name != "" ? 1 : 0
-  
-  zone_id = data.aws_route53_zone.selected[0].zone_id
-  name    = var.domain_name
-  type    = "A"
-  ttl     = 300
-  records = [module.ec2_instance.public_ip]
-}
-
-data "aws_route53_zone" "selected" {
-  count = var.domain_name != "" ? 1 : 0
-  
-  name = var.domain_name
 }

@@ -19,13 +19,11 @@ variable "project_name" {
 variable "vpc_id" {
   description = "VPC ID"
   type        = string
-  default     = ""
 }
 
 variable "public_subnet_ids" {
   description = "List of public subnet IDs"
   type        = list(string)
-  default     = []
 }
 
 variable "instance_type" {
@@ -37,11 +35,10 @@ variable "instance_type" {
 variable "ssh_key_name" {
   description = "SSH key pair name"
   type        = string
-  default     = "task-manager-key"
 }
 
 variable "allowed_ips" {
-  description = "List of IPs allowed to access SSH"
+  description = "List of allowed IP CIDR blocks"
   type        = list(string)
   default     = ["0.0.0.0/0"]
 }
@@ -56,4 +53,10 @@ variable "docker_image" {
   description = "Docker image for the application"
   type        = string
   default     = "nginx:alpine"
+}
+
+variable "deploy_jenkins" {
+  description = "Whether to deploy Jenkins on the EC2 instance"
+  type        = bool
+  default     = false
 }
