@@ -2,79 +2,67 @@ pipeline {
     agent any
     
     environment {
+        DOCKER_HUB_USERNAME = 'dineshks07'
         APP_NAME = 'task-manager'
-        DOCKER_IMAGE = 'task-manager'
+        DOCKER_IMAGE = "${DOCKER_HUB_USERNAME}/${APP_NAME}"
         DOCKER_TAG = "${BUILD_NUMBER}-${GIT_COMMIT.take(7)}"
-        DOCKER_HUB_USER = credentials('docker-hub-credentials').username
-        DOCKER_HUB_PASS = credentials('docker-hub-credentials').password
     }
     
     stages {
-        // STAGE 1: Checkout
-        stage('Checkout Code') {
+        stage('Checkout') {
             steps {
                 checkout scm
                 sh 'echo "✅ Repository checked out"'
             }
         }
         
-        // STAGE 2: Login to Docker Hub
         stage('Login to Docker Hub') {
             steps {
-                sh '''
-                    echo "Logging into Docker Hub..."
-                    echo "${DOCKER_HUB_PASS}" | docker login --username "${DOCKER_HUB_USER}" --password-stdin
-                    docker info
-                    echo "✅ Logged into Docker Hub"
-                '''
+                withCredentials([usernamePassword(
+                    credentialsId: 'docker-hub-credentials',
+                    usernameVariable: 'DOCKER_USER',
+                    passwordVariable: 'DOCKER_PASS'
+                )]) {
+                    sh '''
+                        echo "Logging into Docker Hub..."
+                        echo "${DOCKER_PASS}" | docker login --username "${DOCKER_USER}" --password-stdin
+                        echo "✅ Logged into Docker Hub"
+                    '''
+                }
             }
         }
         
-        // STAGE 3: Build Docker
         stage('Build Docker Image') {
             steps {
                 sh '''
                     echo "Building Docker image..."
                     docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} .
                     docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${DOCKER_IMAGE}:latest
-                    
-                    # Tag with Docker Hub namespace
-                    docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${DOCKER_HUB_USER}/${DOCKER_IMAGE}:${DOCKER_TAG}
-                    docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${DOCKER_HUB_USER}/${DOCKER_IMAGE}:latest
-                    
-                    echo "✅ Docker image built"
+                    echo "✅ Docker image built: ${DOCKER_IMAGE}:${DOCKER_TAG}"
                 '''
             }
         }
         
-        // STAGE 4: Push to Docker Hub
         stage('Push to Docker Hub') {
             steps {
                 sh '''
                     echo "Pushing to Docker Hub..."
-                    docker push ${DOCKER_HUB_USER}/${DOCKER_IMAGE}:${DOCKER_TAG}
-                    docker push ${DOCKER_HUB_USER}/${DOCKER_IMAGE}:latest
-                    echo "✅ Pushed to Docker Hub: ${DOCKER_HUB_USER}/${DOCKER_IMAGE}:${DOCKER_TAG}"
+                    docker push ${DOCKER_IMAGE}:${DOCKER_TAG}
+                    docker push ${DOCKER_IMAGE}:latest
+                    echo "✅ Successfully pushed to Docker Hub!"
                 '''
             }
         }
         
-        // STAGE 5: Test Locally
-        stage('Test Locally') {
+        stage('Test') {
             steps {
                 sh '''
-                    echo "Testing Docker container..."
-                    docker run -d --name ${APP_NAME}-test -p 8080:80 ${DOCKER_HUB_USER}/${DOCKER_IMAGE}:latest
+                    echo "Testing the image..."
+                    docker run -d --name test-app -p 8080:80 ${DOCKER_IMAGE}:latest
                     sleep 5
-                    
-                    if curl -f http://localhost:8080/health; then
-                        echo "✅ Health check passed!"
-                    else
-                        echo "❌ Health check failed"
-                    fi
-                    
-                    docker stop ${APP_NAME}-test
-                    docker rm ${APP_NAME}-test
+                    curl -f http://localhost:8080/health && echo "✅ Application is healthy!" || echo "❌ Health check failed"
+                    docker stop test-app
+                    docker rm test-app
                 '''
             }
         }
@@ -82,9 +70,9 @@ pipeline {
     
     post {
         success {
-            echo "🎉 CI Pipeline Successful!"
-            echo "📦 Docker Image: ${DOCKER_HUB_USER}/${DOCKER_IMAGE}:${DOCKER_TAG}"
-            echo "🔗 Docker Hub: https://hub.docker.com/r/${DOCKER_HUB_USER}/${DOCKER_IMAGE}"
+            echo "🎉 CI/CD Pipeline Completed Successfully!"
+            echo "📦 Docker Image: ${DOCKER_IMAGE}:${DOCKER_TAG}"
+            echo "🔗 View at: https://hub.docker.com/r/dineshks07/task-manager"
         }
         failure {
             echo "❌ Pipeline failed!"
