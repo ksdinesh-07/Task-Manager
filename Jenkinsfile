@@ -2,8 +2,7 @@ pipeline {
     agent any
     
     environment {
-        // Use your actual Docker Hub username
-        DOCKER_HUB_USERNAME = 'ksdinesh07'  // CHANGE TO YOUR USERNAME
+        DOCKER_HUB_USERNAME = 'dineshks07'
         APP_NAME = 'task-manager'
         DOCKER_IMAGE = "${DOCKER_HUB_USERNAME}/${APP_NAME}"
         DOCKER_TAG = "${BUILD_NUMBER}-${GIT_COMMIT.take(7)}"
@@ -39,8 +38,7 @@ pipeline {
                     echo "Building Docker image..."
                     docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} .
                     docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${DOCKER_IMAGE}:latest
-                    echo "✅ Docker image built"
-                    echo "Image: ${DOCKER_IMAGE}:${DOCKER_TAG}"
+                    echo "✅ Docker image built: ${DOCKER_IMAGE}:${DOCKER_TAG}"
                 '''
             }
         }
@@ -52,7 +50,7 @@ pipeline {
                     docker push ${DOCKER_IMAGE}:${DOCKER_TAG}
                     docker push ${DOCKER_IMAGE}:latest
                     echo "✅ Successfully pushed to Docker Hub!"
-                    echo "📦 Image URL: https://hub.docker.com/r/${DOCKER_HUB_USERNAME}/${APP_NAME}"
+                    echo "📦 Image: ${DOCKER_IMAGE}:${DOCKER_TAG}"
                 '''
             }
         }
@@ -73,9 +71,12 @@ pipeline {
     
     post {
         success {
-            echo "🎉 Pipeline completed successfully!"
-            echo "📦 Image: ${DOCKER_IMAGE}:${DOCKER_TAG}"
-            echo "🔗 View at: https://hub.docker.com/r/${DOCKER_HUB_USERNAME}/${APP_NAME}"
+            echo "🎉 CI/CD Pipeline Completed Successfully!"
+            echo "📦 Docker Image: ${DOCKER_IMAGE}:${DOCKER_TAG}"
+            echo "🔗 View at: https://hub.docker.com/r/dineshks07/task-manager"
+        }
+        failure {
+            echo "❌ Pipeline failed!"
         }
     }
 }
