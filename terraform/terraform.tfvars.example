@@ -1,0 +1,24 @@
+# Copy this file to terraform.tfvars and update values
+# terraform.tfvars is NOT committed to git
+
+aws_region = "us-east-1"
+environment = "dev"
+project_name = "task-manager"
+instance_type = "t2.micro"
+ssh_key_name = "task-manager-key"
+
+# VPC Configuration
+vpc_id = "vpc-xxxxxxxx"
+public_subnet_ids = ["subnet-xxxxxx1", "subnet-xxxxxx2"]
+
+# Security
+allowed_ips = ["192.168.1.0/24", "10.0.0.0/16"]
+
+# Application
+domain_name = "task-manager.example.com"
+docker_image = "your-username/task-manager-web:latest"
+
+# Database (if needed)
+# db_username = "admin"
+# db_password = "secure_password_here"
+# db_name = "taskmanager"

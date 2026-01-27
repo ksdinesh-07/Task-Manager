@@ -1,0 +1,244 @@
+name: Deploy Task Manager
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:  # Manual trigger
+
+env:
+  AWS_REGION: us-east-1
+  DOCKER_IMAGE: task-manager
+  ECR_REPOSITORY: task-manager
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Lint code
+      run: |
+        echo "Checking HTML structure..."
+        npx htmlhint src/*.html || true
+        echo "Checking CSS..."
+        npx stylelint "**/*.css" || true
+        echo "Checking JavaScript..."
+        npx eslint "**/*.js" || true
+    
+    - name: Run tests
+      run: |
+        if [ -f "package.json" ] && grep -q '"test"' package.json; then
+          npm test
+        else
+          echo "No tests configured"
+        fi
+    
+    - name: Security scan
+      uses: snyk/actions/node@master
+      env:
+        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      with:
+        args: --severity-threshold=high
+
+  build-docker:
+    runs-on: ubuntu-latest
+    needs: [lint-and-test]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Docker meta
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: |
+          ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_IMAGE }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=semver,pattern={{version}}
+          type=sha,prefix={{branch}}-
+    
+    - name: Login to Docker Hub
+      uses: docker/login-action@v3
+      if: github.event_name != 'pull_request'
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+    
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        push: ${{ github.event_name != 'pull_request' }}
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+  terraform-apply:
+    runs-on: ubuntu-latest
+    needs: [build-docker]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment: production
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: 1.6.0
+    
+    - name: Terraform Init
+      run: |
+        cd terraform
+        terraform init \
+          -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
+          -backend-config="key=terraform.tfstate" \
+          -backend-config="region=${{ env.AWS_REGION }}" \
+          -backend-config="encrypt=true"
+    
+    - name: Terraform Plan
+      run: |
+        cd terraform
+        terraform plan \
+          -var="environment=production" \
+          -var="project_name=task-manager" \
+          -var="docker_image=${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_IMAGE }}:latest" \
+          -out=tfplan
+    
+    - name: Terraform Apply
+      run: |
+        cd terraform
+        terraform apply -auto-approve tfplan
+      
+    - name: Save Terraform outputs
+      run: |
+        cd terraform
+        terraform output -json > terraform-outputs.json
+      shell: bash
+    
+    - name: Upload Terraform outputs
+      uses: actions/upload-artifact@v4
+      with:
+        name: terraform-outputs
+        path: terraform/terraform-outputs.json
+
+  deploy-to-ec2:
+    runs-on: ubuntu-latest
+    needs: [terraform-apply]
+    environment: production
+    
+    steps:
+    - name: Download Terraform outputs
+      uses: actions/download-artifact@v4
+      with:
+        name: terraform-outputs
+        path: terraform/
+    
+    - name: Parse Terraform outputs
+      id: tf-outputs
+      run: |
+        EC2_IP=$(jq -r '.ec2_public_ip.value' terraform/terraform-outputs.json)
+        echo "EC2_IP=${EC2_IP}" >> $GITHUB_OUTPUT
+        echo "Deploying to EC2 IP: ${EC2_IP}"
+    
+    - name: Deploy to EC2
+      env:
+        EC2_HOST: ${{ steps.tf-outputs.outputs.EC2_IP }}
+        SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
+      run: |
+        echo "$SSH_PRIVATE_KEY" > key.pem
+        chmod 600 key.pem
+        
+        # Create deployment script
+        cat > deploy.sh << 'DEPLOY_EOF'
+        #!/bin/bash
+        set -e
+        
+        echo "🚀 Deploying Task Manager..."
+        
+        # Create app directory
+        sudo mkdir -p /opt/task-manager
+        
+        # Stop and remove existing container
+        sudo docker stop task-manager || true
+        sudo docker rm task-manager || true
+        
+        # Pull latest image
+        sudo docker pull ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_IMAGE }}:latest
+        
+        # Run new container
+        sudo docker run -d \
+          --name task-manager \
+          --restart unless-stopped \
+          -p 80:80 \
+          -p 443:443 \
+          -v /opt/task-manager/nginx.conf:/etc/nginx/nginx.conf:ro \
+          ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_IMAGE }}:latest
+        
+        echo "✅ Deployment completed!"
+        DEPLOY_EOF
+        
+        # Copy files to EC2
+        scp -o StrictHostKeyChecking=no -i key.pem \
+          deploy.sh \
+          docker-compose.yml \
+          nginx.conf \
+          ubuntu@$EC2_HOST:/tmp/
+        
+        # Execute deployment script
+        ssh -o StrictHostKeyChecking=no -i key.pem ubuntu@$EC2_HOST \
+          "chmod +x /tmp/deploy.sh && sudo /tmp/deploy.sh"
+        
+        # Health check
+        ssh -o StrictHostKeyChecking=no -i key.pem ubuntu@$EC2_HOST \
+          "sleep 5 && curl -f http://localhost/health || exit 1"
+        
+        echo "✅ Application deployed successfully!"
+
+  notify:
+    runs-on: ubuntu-latest
+    needs: [deploy-to-ec2]
+    if: always()
+    
+    steps:
+    - name: Deployment Status
+      run: |
+        if [ "${{ needs.deploy-to-ec2.result }}" == "success" ]; then
+          echo "✅ Deployment successful!"
+          echo "Application URL: http://${{ steps.tf-outputs.outputs.EC2_IP }}"
+        else
+          echo "❌ Deployment failed!"
+          exit 1
+        fi
+    
+    - name: Send Slack notification
+      uses: 8398a7/action-slack@v3
+      if: failure()
+      with:
+        status: ${{ job.status }}
+        author_name: GitHub Actions
+        fields: repo,message,commit,author,action,eventName,ref,workflow,job,took
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

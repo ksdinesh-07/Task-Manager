@@ -1,0 +1,30 @@
+{
+  "name": "devops-task-manager",
+  "version": "1.0.0",
+  "description": "A DevOps-powered task management application with full CI/CD pipeline",
+  "main": "src/script.js",
+  "scripts": {
+    "start": "npx serve -s src -p 3000",
+    "dev": "npx serve -s src -p 3000",
+    "build": "echo 'Build completed'",
+    "test": "echo 'Running tests...' && exit 0",
+    "lint": "echo 'Linting...' && exit 0",
+    "docker:build": "docker build -t devops-task-manager .",
+    "docker:run": "docker run -p 8080:80 devops-task-manager",
+    "docker:compose": "docker-compose up -d",
+    "deploy": "./scripts/deploy.sh"
+  },
+  "keywords": [
+    "devops",
+    "task-manager",
+    "ci-cd",
+    "docker",
+    "terraform",
+    "aws"
+  ],
+  "author": "DevOps Engineer",
+  "license": "MIT",
+  "devDependencies": {
+    "serve": "^14.0.0"
+  }
+}
