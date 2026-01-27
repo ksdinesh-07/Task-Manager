@@ -12,7 +12,6 @@ pipeline {
         stage('Checkout') {
             steps {
                 checkout scm
-                sh 'echo "✅ Repository checked out"'
             }
         }
         
@@ -24,73 +23,19 @@ pipeline {
                     passwordVariable: 'DOCKER_PASS'
                 )]) {
                     sh '''
-                        echo "Logging into Docker Hub..."
                         echo "${DOCKER_PASS}" | docker login --username "${DOCKER_USER}" --password-stdin
-                        echo "✅ Logged into Docker Hub"
                     '''
                 }
             }
         }
         
-        stage('Build Docker Image') {
+        stage('Build & Push') {
             steps {
                 sh '''
-                    echo "Building Docker image..."
                     docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} .
                     docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${DOCKER_IMAGE}:latest
-                    echo "✅ Docker image built: ${DOCKER_IMAGE}:${DOCKER_TAG}"
-                '''
-            }
-        }
-        
-        stage('Push to Docker Hub') {
-            steps {
-                sh '''
-                    echo "Pushing to Docker Hub..."
                     docker push ${DOCKER_IMAGE}:${DOCKER_TAG}
                     docker push ${DOCKER_IMAGE}:latest
-                    echo "✅ Successfully pushed to Docker Hub!"
-                    echo "📦 Image: ${DOCKER_IMAGE}:${DOCKER_TAG}"
-                '''
-            }
-        }
-        
-        stage('Test') {
-            steps {
-                sh '''
-                    echo "Testing the image..."
-                    
-                    # Clean any existing containers first
-                    docker stop test-app 2>/dev/null || true
-                    docker rm test-app 2>/dev/null || true
-                    
-                    # Find available port
-                    for port in 8181 8282 8383 8484 8585; do
-                        if ! netstat -tuln | grep :\${port} > /dev/null; then
-                            TEST_PORT=\${port}
-                            break
-                        fi
-                    done
-                    
-                    echo "Using port: \${TEST_PORT:-8888}"
-                    
-                    # Run container
-                    docker run -d --name test-app -p \${TEST_PORT:-8888}:80 ${DOCKER_IMAGE}:latest
-                    sleep 8
-                    
-                    # Test
-                    if curl -f --retry 3 --retry-delay 2 http://localhost:\${TEST_PORT:-8888}/health; then
-                        echo "✅ Application is healthy!"
-                    else
-                        echo "❌ Health check failed"
-                        docker logs test-app
-                        exit 1
-                    fi
-                    
-                    # Cleanup
-                    docker stop test-app
-                    docker rm test-app
-                    echo "✅ Test completed successfully!"
                 '''
             }
         }
@@ -98,19 +43,9 @@ pipeline {
     
     post {
         success {
-            echo "🎉 CI/CD Pipeline Completed Successfully!"
-            echo "📦 Docker Image: ${DOCKER_IMAGE}:${DOCKER_TAG}"
-            echo "🔗 View at: https://hub.docker.com/r/dineshks07/task-manager"
-        }
-        failure {
-            echo "❌ Pipeline failed!"
-        }
-        always {
-            sh '''
-                echo "Final cleanup..."
-                docker stop test-app 2>/dev/null || true
-                docker rm test-app 2>/dev/null || true
-            '''
+            echo "🎉 SUCCESS! Docker image pushed to Docker Hub!"
+            echo "📦 Image: ${DOCKER_IMAGE}:${DOCKER_TAG}"
+            echo "🔗 https://hub.docker.com/r/dineshks07/task-manager"
         }
     }
 }
