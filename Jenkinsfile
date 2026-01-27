@@ -50,17 +50,7 @@ pipeline {
                     docker push ${DOCKER_IMAGE}:${DOCKER_TAG}
                     docker push ${DOCKER_IMAGE}:latest
                     echo "✅ Successfully pushed to Docker Hub!"
-                '''
-            }
-        }
-        
-        stage('Clean Previous Containers') {
-            steps {
-                sh '''
-                    echo "Cleaning up any previous containers..."
-                    docker stop test-app 2>/dev/null || true
-                    docker rm test-app 2>/dev/null || true
-                    echo "✅ Cleanup completed"
+                    echo "📦 Image: ${DOCKER_IMAGE}:${DOCKER_TAG}"
                 '''
             }
         }
@@ -69,21 +59,38 @@ pipeline {
             steps {
                 sh '''
                     echo "Testing the image..."
-                    # Use random port to avoid conflicts
-                    TEST_PORT=$((8080 + RANDOM % 100))
-                    echo "Using port: $TEST_PORT"
                     
-                    docker run -d --name test-app -p ${TEST_PORT}:80 ${DOCKER_IMAGE}:latest
-                    sleep 5
+                    # Clean any existing containers first
+                    docker stop test-app 2>/dev/null || true
+                    docker rm test-app 2>/dev/null || true
                     
-                    if curl -f http://localhost:${TEST_PORT}/health; then
+                    # Find available port
+                    for port in 8181 8282 8383 8484 8585; do
+                        if ! netstat -tuln | grep :\${port} > /dev/null; then
+                            TEST_PORT=\${port}
+                            break
+                        fi
+                    done
+                    
+                    echo "Using port: \${TEST_PORT:-8888}"
+                    
+                    # Run container
+                    docker run -d --name test-app -p \${TEST_PORT:-8888}:80 ${DOCKER_IMAGE}:latest
+                    sleep 8
+                    
+                    # Test
+                    if curl -f --retry 3 --retry-delay 2 http://localhost:\${TEST_PORT:-8888}/health; then
                         echo "✅ Application is healthy!"
                     else
                         echo "❌ Health check failed"
+                        docker logs test-app
+                        exit 1
                     fi
                     
+                    # Cleanup
                     docker stop test-app
                     docker rm test-app
+                    echo "✅ Test completed successfully!"
                 '''
             }
         }
