@@ -1,0 +1,39 @@
+# Large files
+*.deb
+*.zip
+*.tar.gz
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.backup
+terraform.tfstate*
+
+# Docker
+node_modules/
+dist/
+build/
+
+# Environment
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+
+# System
+.DS_Store
+Thumbs.db
+
+# Jenkins
+.jenkins/
+workspace/
+
+# Logs
+*.log
+logs/
+
+# Temp files
+*.tmp
+*.temp
