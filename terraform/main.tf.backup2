@@ -1,0 +1,218 @@
+terraform {
+  required_version = ">= 1.0"
+
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "6.28.0"  # Exact version from your lock file
+    }
+  }
+
+  # Backend configuration (local for now)
+  backend "local" {
+    path = "terraform.tfstate"
+  }
+}
+
+provider "aws" {
+  region = var.aws_region
+  
+  # Add retry configuration for network stability
+  retry_mode  = "standard"
+  max_retries = 5
+  
+  # Skip validation during initialization to speed up
+  skip_credentials_validation = true
+  skip_requesting_account_id  = true
+}
+
+# Security Group for the application
+resource "aws_security_group" "app" {
+  name_prefix = "${var.project_name}-${var.environment}-"
+  vpc_id      = var.vpc_id
+
+  ingress {
+    description = "SSH access"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = var.allowed_ips
+  }
+
+  ingress {
+    description = "HTTP access"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "HTTPS access"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "Application port"
+    from_port   = var.app_port
+    to_port     = var.app_port
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    description = "Allow all outbound traffic"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name        = "${var.project_name}-${var.environment}-sg"
+    Environment = var.environment
+    Project     = var.project_name
+    ManagedBy   = "Terraform"
+  }
+}
+
+# EC2 Instance
+resource "aws_instance" "app" {
+  ami           = var.ami_id
+  instance_type = var.instance_type
+  
+  key_name               = var.ssh_key_name
+  subnet_id              = var.public_subnet_ids[0]
+  vpc_security_group_ids = [aws_security_group.app.id]
+  
+  associate_public_ip_address = true
+  
+  # Root volume configuration
+  root_block_device {
+    volume_size = var.volume_size
+    volume_type = "gp3"
+    encrypted   = true
+    
+    tags = {
+      Name        = "${var.project_name}-${var.environment}-root"
+      Environment = var.environment
+    }
+  }
+  
+  # Instance metadata options
+  metadata_options {
+    http_endpoint               = "enabled"
+    http_tokens                 = "optional"
+    http_put_response_hop_limit = 2
+    instance_metadata_tags      = "enabled"
+  }
+  
+  # User data to install Docker and run the application
+  user_data = <<-EOF
+              #!/bin/bash
+              # Update system
+              yum update -y
+              
+              # Install Docker
+              yum install -y docker
+              systemctl start docker
+              systemctl enable docker
+              usermod -aG docker ec2-user
+              
+              # Install Docker Compose
+              curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" \
+                -o /usr/local/bin/docker-compose
+              chmod +x /usr/local/bin/docker-compose
+              
+              # Create application directory
+              mkdir -p /opt/app
+              cd /opt/app
+              
+              # Create Docker Compose file
+              cat > docker-compose.yml << 'DOCKERCOMPOSE'
+              version: '3.8'
+              services:
+                app:
+                  image: ${var.docker_image}
+                  container_name: ${var.project_name}-${var.environment}
+                  ports:
+                    - "80:${var.app_port}"
+                  environment:
+                    - NODE_ENV=${var.environment}
+                  restart: always
+                  healthcheck:
+                    test: ["CMD", "curl", "-f", "http://localhost:${var.app_port}/health"]
+                    interval: 30s
+                    timeout: 10s
+                    retries: 3
+                    start_period: 40s
+              DOCKERCOMPOSE
+              
+              # Pull and run the Docker image
+              docker-compose pull
+              docker-compose up -d
+              
+              # Create a simple health check endpoint
+              sleep 10
+              docker exec ${var.project_name}-${var.environment} sh -c 'mkdir -p /usr/share/nginx/html && echo "OK" > /usr/share/nginx/html/health' || true
+              EOF
+
+  tags = {
+    Name        = "${var.project_name}-${var.environment}"
+    Environment = var.environment
+    Project     = var.project_name
+    ManagedBy   = "Terraform"
+  }
+}
+
+# Elastic IP (optional - for static IP address)
+resource "aws_eip" "app_eip" {
+  count = var.allocate_eip ? 1 : 0
+  
+  instance = aws_instance.app.id
+  domain   = "vpc"
+  
+  tags = {
+    Name        = "${var.project_name}-${var.environment}-eip"
+    Environment = var.environment
+  }
+}
+
+# Outputs
+output "ec2_public_ip" {
+  description = "Public IP address of the EC2 instance"
+  value       = aws_instance.app.public_ip
+}
+
+output "ec2_public_dns" {
+  description = "Public DNS name of the EC2 instance"
+  value       = aws_instance.app.public_dns
+}
+
+output "ssh_command" {
+  description = "SSH command to connect to the instance"
+  value       = "ssh -i ${var.ssh_key_name}.pem ec2-user@${aws_instance.app.public_dns}"
+}
+
+output "application_url" {
+  description = "URL to access the application"
+  value       = "http://${aws_instance.app.public_dns}"
+}
+
+output "elastic_ip" {
+  description = "Elastic IP address (if allocated)"
+  value       = var.allocate_eip ? try(aws_eip.app_eip[0].public_ip, null) : null
+}
+
+output "security_group_id" {
+  description = "ID of the security group"
+  value       = aws_security_group.app.id
+}
+
+output "instance_id" {
+  description = "ID of the EC2 instance"
+  value       = aws_instance.app.id
+}
