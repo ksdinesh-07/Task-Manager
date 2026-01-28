@@ -41,7 +41,7 @@ pipeline {
         
         stage('Test') {
             steps {
-                sh '''
+                sh """
                     echo "Installing dependencies..."
                     npm install
                     
@@ -49,26 +49,26 @@ pipeline {
                     npm test
                     
                     echo "Tests completed!"
-                '''
+                """
             }
         }
         
         stage('Security Scan') {
             steps {
-                sh '''
+                sh """
                     echo "Running security scan..."
                     npm audit --audit-level=high || true
-                '''
+                """
             }
         }
         
         stage('Build Docker Image') {
             steps {
-                sh '''
+                sh """
                     echo "Building Docker image..."
                     docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} .
                     docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${DOCKER_IMAGE}:latest
-                '''
+                """
             }
         }
         
@@ -79,20 +79,20 @@ pipeline {
                     usernameVariable: 'DOCKER_USER',
                     passwordVariable: 'DOCKER_PASS'
                 )]) {
-                    sh '''
+                    sh """
                         echo "${DOCKER_PASS}" | docker login --username "${DOCKER_USER}" --password-stdin
-                    '''
+                    """
                 }
             }
         }
         
         stage('Push to Docker Hub') {
             steps {
-                sh '''
+                sh """
                     echo "Pushing Docker image to Docker Hub..."
                     docker push ${DOCKER_IMAGE}:${DOCKER_TAG}
                     docker push ${DOCKER_IMAGE}:latest
-                '''
+                """
             }
         }
         
@@ -146,6 +146,7 @@ pipeline {
         }
         
         stage('Terraform Plan') {
+        stage('Terraform Plan') {
             steps {
                 withCredentials([
                     aws(
@@ -155,13 +156,13 @@ pipeline {
                     )
                 ]) {
                     dir('terraform') {
-                        sh '''
+                        sh """
                             echo "Running Terraform plan..."
                             terraform plan -var="environment=${params.ENVIRONMENT}" -var="project_name=${APP_NAME}" -var="docker_image=${DOCKER_IMAGE}:${DOCKER_TAG}" -out=tfplan.${BUILD_NUMBER}
                             
                             echo "=== PLAN SUMMARY ==="
                             terraform show -no-color tfplan.${BUILD_NUMBER} | tail -50
-                        '''
+                        """
                     }
                 }
             }
@@ -285,10 +286,10 @@ pipeline {
                     )
                 ]) {
                     dir('terraform') {
-                        sh '''
+                        sh """
                             echo "Destroying infrastructure..."
                             terraform destroy -auto-approve -var="environment=${params.ENVIRONMENT}" -var="project_name=${APP_NAME}"
-                        '''
+                        """
                     }
                 }
             }
@@ -297,12 +298,12 @@ pipeline {
     
     post {
         always {
-            sh '''
+            sh """
                 # Cleanup
                 rm -f deploy.sh instance_ip.env
                 rm -f terraform/instance_ip.env terraform/terraform_output.json
                 rm -f terraform/tfplan.${BUILD_NUMBER}
-            '''
+            """
             cleanWs()
             
             script {
