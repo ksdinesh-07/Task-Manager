@@ -248,11 +248,7 @@ pipeline {
                             sh """
                                 echo "Applying Terraform configuration..."
                                 
-                                terraform apply \\
-                                    ${autoApprove} \\
-                                    -var="environment=${params.ENVIRONMENT}" \\
-                                    -var="project_name=${APP_NAME}" \\
-                                    -var="docker_image=${DOCKER_IMAGE}:${DOCKER_TAG}" \\
+                                terraform apply\
                                     tfplan.${BUILD_NUMBER}
                                 
                                 # Get outputs
